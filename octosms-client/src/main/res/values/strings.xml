@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="perm_sms_data_transfer_label">SMS Data Transfer</string>
+    <string name="perm_sms_data_transfer_desc">Allow secure SMS data transfer between apps</string>
+    <string name="perm_key_exchange_label">Key Exchange Permission</string>
+    <string name="perm_key_exchange_desc">Allows secure key exchange with this app. Only apps signed with the same certificate can access this functionality.</string>
+
+</resources>

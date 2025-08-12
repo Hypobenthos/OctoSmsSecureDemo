@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <permission
+        android:name="app.octosms.smsclient.permission.KEY_EXCHANGE"
+        android:description="@string/perm_key_exchange_desc"
+        android:label="@string/perm_key_exchange_label"
+        android:protectionLevel="signature" />
+
+    <permission
+        android:name="app.octosms.smsclient.permission.SMS_DATA_TRANSFER"
+        android:description="@string/perm_sms_data_transfer_desc"
+        android:label="@string/perm_sms_data_transfer_label"
+        android:protectionLevel="signature" />
+
+    <application>
+        <provider
+            android:name="app.octosms.smsclient.provider.SmsDataProvider"
+            android:authorities="app.octosms.smsclient.smsprovider"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="app.octosms.smsclient.permission.SMS_DATA_TRANSFER" />
+
+        <provider
+            android:name="app.octosms.smsclient.provider.KeyExchangeProvider"
+            android:authorities="app.octosms.smsclient.keyprovider"
+            android:exported="true"
+            android:permission="app.octosms.smsclient.permission.KEY_EXCHANGE" />
+    </application>
+</manifest>
