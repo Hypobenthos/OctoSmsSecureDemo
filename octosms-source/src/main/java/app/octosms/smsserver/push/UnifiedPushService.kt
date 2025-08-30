@@ -4,6 +4,7 @@ import android.content.Context
 import app.octosms.commoncrypto.config.PushChannel
 import app.octosms.commoncrypto.config.SmsSourceConfig
 import app.octosms.commoncrypto.log.logD
+import app.octosms.commoncrypto.log.logE
 import app.octosms.commoncrypto.model.SmsData
 
 object UnifiedPushService {
@@ -17,9 +18,8 @@ object UnifiedPushService {
             PushChannel.CLOUD -> {
                 PushServiceLocator.cloudPushService?.push(context, sms)
                     ?: run {
-                        // 云服务不可用时，降级到本机推送
-                        "Cloud service unavailable, fallback to local push".logD("UnifiedPushService")
-                        PushServiceLocator.pushService.push(context, sms)
+                        // 云服务不可用
+                        "Cloud service unavailable, fallback to local push".logE("UnifiedPushService")
                     }
             }
         }
