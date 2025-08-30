@@ -16,5 +16,9 @@ object SmsSourceConfig {
         return pushChannel
     }
 
+    fun setPushChannel(channel: PushChannel) {
+        pushChannel = channel
+    }
+
 
 }
