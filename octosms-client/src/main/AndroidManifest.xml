@@ -4,14 +4,12 @@
     <permission
         android:name="app.octosms.smsclient.permission.KEY_EXCHANGE"
         android:description="@string/perm_key_exchange_desc"
-        android:label="@string/perm_key_exchange_label"
-        android:protectionLevel="signature" />
+        android:label="@string/perm_key_exchange_label" />
 
     <permission
         android:name="app.octosms.smsclient.permission.SMS_DATA_TRANSFER"
         android:description="@string/perm_sms_data_transfer_desc"
-        android:label="@string/perm_sms_data_transfer_label"
-        android:protectionLevel="signature" />
+        android:label="@string/perm_sms_data_transfer_label" />
 
     <application>
         <provider

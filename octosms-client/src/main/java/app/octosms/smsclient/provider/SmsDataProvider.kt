@@ -7,8 +7,10 @@ import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.database.Cursor
 import android.net.Uri
+import android.os.Binder
 import android.os.Build
 import app.octosms.commoncrypto.callback.SmsDataCallbackManager
+import app.octosms.commoncrypto.config.SecurityConfigManager
 import app.octosms.commoncrypto.config.SmsSourceConfig
 import app.octosms.commoncrypto.crypto.CryptoServiceFactory
 import app.octosms.commoncrypto.error.PushResultCode
@@ -22,6 +24,7 @@ import app.octosms.commoncrypto.model.CryptoResult
 import app.octosms.commoncrypto.model.EncryptedData
 import app.octosms.commoncrypto.model.EncryptionType
 import app.octosms.commoncrypto.model.SmsData
+import java.security.MessageDigest
 
 /**
  * Content Provider for receiving encrypted SMS data from authorized applications
@@ -32,7 +35,6 @@ class SmsDataProvider : ContentProvider() {
         private const val AUTHORITY = "app.octosms.smsclient.smsprovider"
         private const val SMS_DATA_CODE = 1
         private const val MAX_MESSAGE_LOG_LENGTH = 50
-
 
         // Required fields for encryption
         private val REQUIRED_ENCRYPTION_FIELDS =
@@ -49,8 +51,11 @@ class SmsDataProvider : ContentProvider() {
             }
     }
 
-
     override fun onCreate(): Boolean {
+        val config = SecurityConfigManager.getConfig()
+        if (config.isDebugMode()) {
+            debugPrintSignatureFingerprints()
+        }
         "SmsDataProvider initialized".logD(TAG)
         return true
     }
@@ -148,8 +153,18 @@ class SmsDataProvider : ContentProvider() {
     private fun extractAndValidateData(values: ContentValues): ValidatedSmsData? {
         return try {
             val senderApp = values.getAsString("sender_app")!!
-            if (!isTrustedCaller(senderApp)) {
-                "Invalid sender app: $senderApp".logW(TAG)
+
+            // 使用实际的调用方包名进行验证，而不是 ContentValues 中的值
+            val actualCallingPackage = getCallingPackageName()
+
+            // 验证 ContentValues 中的 sender_app 与实际调用方是否一致
+            if (actualCallingPackage != senderApp) {
+                "Sender app mismatch. Claimed: $senderApp, Actual: $actualCallingPackage".logW(TAG)
+                return null
+            }
+
+            if (!isTrustedCaller(actualCallingPackage)) {
+                "Unauthorized access from: $actualCallingPackage".logW(TAG)
                 return null
             }
 
@@ -195,17 +210,76 @@ class SmsDataProvider : ContentProvider() {
             null
         }
 
-    private fun isTrustedCaller(pkg: String): Boolean {
+    /**
+     * 获取调用方包名，添加错误处理
+     */
+    private fun getCallingPackageName(): String? {
+        return try {
+            val pm = context?.packageManager ?: return null
+            val uid = Binder.getCallingUid()
+            pm.getPackagesForUid(uid)?.firstOrNull()
+        } catch (e: Exception) {
+            "Error getting calling package name: ${e.message}".logW(TAG)
+            null
+        }
+    }
+
+    /**
+     * 验证调用方是否可信（使用可配置的安全策略）
+     */
+    private fun isTrustedCaller(pkg: String?): Boolean {
+        if (pkg == null) return false
+
         val context = context ?: return false
-        val pm = context.packageManager
+        val config = SecurityConfigManager.getConfig()
 
         return try {
-            val mySignatures = getPackageSignatures(pm, context.packageName)
-            val otherSignatures = getPackageSignatures(pm, pkg)
+            // 1. 检查是否启用了包名白名单
+            if (config.isPackageWhitelistEnabled()) {
+                if (!isAllowedPackage(pkg)) {
+                    "Package not in whitelist: $pkg".logW(TAG)
+                    return false
+                }
+            }
 
-            compareSignatures(mySignatures, otherSignatures)
+            // 2. 检查是否启用了签名指纹验证
+            if (config.isFingerprintVerificationEnabled()) {
+                val expectedFingerprints = config.getExpectedFingerprints(pkg)
+                if (expectedFingerprints.isEmpty()) {
+                    "No expected fingerprints for package: $pkg".logW(TAG)
+                    return false
+                }
+
+                val actualFingerprint = getPackageSignatureFingerprint(context.packageManager, pkg)
+                if (actualFingerprint == null) {
+                    "Cannot get signature fingerprint for package: $pkg".logW(TAG)
+                    return false
+                }
+
+                // 检查实际指纹是否匹配任何一个预期指纹
+                val isMatch = expectedFingerprints.any { expected ->
+                    expected.equals(actualFingerprint, ignoreCase = true)
+                }
+
+                if (isMatch) {
+                    "Trusted caller verified: $pkg with fingerprint: $actualFingerprint".logD(TAG)
+                } else {
+                    "Signature mismatch for $pkg. Expected: $expectedFingerprints, Actual: $actualFingerprint".logW(TAG)
+                }
+
+                return isMatch
+            }
+
+            // 如果两个验证都没启用，则允许访问（不推荐在生产环境中使用）
+            if (!config.isPackageWhitelistEnabled() && !config.isFingerprintVerificationEnabled()) {
+                "Warning: No security verification enabled!".logW(TAG)
+                return true
+            }
+
+            true
+
         } catch (e: PackageManager.NameNotFoundException) {
-            "Package not found: $pkg ${e.message}".logW(TAG)
+            "Package not found: $pkg".logW(TAG)
             false
         } catch (e: Exception) {
             "Error verifying caller trust: ${e.message}".logW(TAG)
@@ -214,18 +288,35 @@ class SmsDataProvider : ContentProvider() {
     }
 
     /**
-     * 比较两个签名数组是否匹配
+     * 检查包名是否在允许列表中
      */
-    private fun compareSignatures(
-        signatures1: Array<Signature>?,
-        signatures2: Array<Signature>?,
-    ): Boolean {
-        if (signatures1 == null || signatures2 == null) return false
+    private fun isAllowedPackage(packageName: String): Boolean {
+        val config = SecurityConfigManager.getConfig()
+        return packageName in config.getAllowedPackages()
+    }
 
-        return signatures1.any { sig1 ->
-            signatures2.any { sig2 ->
-                sig1.toCharsString() == sig2.toCharsString()
+    /**
+     * 获取包的签名 SHA1 指纹
+     */
+    private fun getPackageSignatureFingerprint(pm: PackageManager, packageName: String): String? {
+        return try {
+            val signatures = getPackageSignatures(pm, packageName)
+            if (signatures == null || signatures.isEmpty()) {
+                return null
             }
+
+            // 获取第一个签名的 SHA1 指纹
+            val signature = signatures[0]
+            val digest = MessageDigest.getInstance("SHA1")
+            val fingerprint = digest.digest(signature.toByteArray())
+
+            fingerprint.joinToString(":") {
+                String.format("%02X", it)
+            }
+
+        } catch (e: Exception) {
+            "Error getting signature fingerprint for $packageName: ${e.message}".logE(TAG)
+            null
         }
     }
 
@@ -252,6 +343,49 @@ class SmsDataProvider : ContentProvider() {
         }
     }
 
+    /**
+     * 调试用：获取并打印所有相关应用的签名指纹
+     */
+    private fun debugPrintSignatureFingerprints() {
+        val context = context ?: return
+        val pm = context.packageManager
+        val config = SecurityConfigManager.getConfig()
+
+        val packagesToCheck = mutableListOf<String>().apply {
+            add(context.packageName) // 当前应用
+            addAll(config.getAllowedPackages()) // 配置中的所有包名
+        }
+
+        "=== SMS Provider Signature Fingerprints (Debug Mode) ===".logD(TAG)
+
+        packagesToCheck.forEach { pkg ->
+            try {
+                val fingerprint = getPackageSignatureFingerprint(pm, pkg)
+                "$pkg: $fingerprint".logD(TAG)
+            } catch (e: Exception) {
+                "$pkg: Error - ${e.message}".logE(TAG)
+            }
+        }
+
+        "=== End SMS Provider Fingerprints ===".logD(TAG)
+    }
+
+    /**
+     * 原有的签名比较方法（现在不再使用，但保留以备后用）
+     */
+    @Deprecated("Use fingerprint verification instead")
+    private fun compareSignatures(
+        signatures1: Array<Signature>?,
+        signatures2: Array<Signature>?,
+    ): Boolean {
+        if (signatures1 == null || signatures2 == null) return false
+
+        return signatures1.any { sig1 ->
+            signatures2.any { sig2 ->
+                sig1.toCharsString() == sig2.toCharsString()
+            }
+        }
+    }
 
     private fun decryptSmsData(encryptedData: EncryptedData): CryptoResult<SmsData>? {
         val key = SharedKeyManager.getOrGenerateKey()
@@ -268,7 +402,6 @@ class SmsDataProvider : ContentProvider() {
             CryptoResult.Failure(CryptoError.InvalidKey)
         }
     }
-
 
     /**
      * Process decrypted SMS data with comprehensive logging

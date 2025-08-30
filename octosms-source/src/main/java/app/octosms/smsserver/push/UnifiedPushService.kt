@@ -3,7 +3,6 @@ package app.octosms.smsserver.push
 import android.content.Context
 import app.octosms.commoncrypto.config.PushChannel
 import app.octosms.commoncrypto.config.SmsSourceConfig
-import app.octosms.commoncrypto.log.logD
 import app.octosms.commoncrypto.log.logE
 import app.octosms.commoncrypto.model.SmsData
 
