@@ -13,6 +13,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import app.octosms.commoncrypto.config.OctoSmsSdk
+import app.octosms.commoncrypto.config.SecurityConfigManager
+import app.octosms.smsserver.BuildConfig
 
 class MainActivity : AppCompatActivity() {
 
@@ -60,6 +63,17 @@ class MainActivity : AppCompatActivity() {
                 if (isChecked) "推送已开启" else "推送已关闭",
                 Toast.LENGTH_SHORT
             ).show()
+        }
+
+        val customSecurityConfig = SecurityConfigManager.builder()
+            .enablePackageWhitelist(true)
+            .enableFingerprintVerification(true)
+            .enableDebugMode(BuildConfig.DEBUG)
+            .addAllowedApp("app.octoclip.source.sms", "SHA1_FINGERPRINT_1", "SHA1_FINGERPRINT_2")
+            .build()
+
+        OctoSmsSdk.init {
+            securityConfig = customSecurityConfig
         }
     }
 
