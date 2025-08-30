@@ -9,7 +9,7 @@ import app.octosms.commoncrypto.callback.SmsDataCallbackManager
 import app.octosms.commoncrypto.config.SmsSourceConfig
 import app.octosms.commoncrypto.log.logE
 import app.octosms.commoncrypto.model.SmsData
-import app.octosms.smsserver.push.PushServiceLocator
+import app.octosms.smsserver.push.UnifiedPushService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -30,7 +30,7 @@ class SMSReceiver() : BroadcastReceiver() {
                 withContext(Dispatchers.IO) {
                     SmsDataCallbackManager.notifyReceived(sms, sms.sender)
                     // 调用 ServiceLocator 中的推送服务
-                    PushServiceLocator.pushService.push(context, sms)
+                    UnifiedPushService.push(context, sms)
                 }
             }
         }
